@@ -77,10 +77,10 @@ Claude Code のプラグインシステムを使用してインストールし�
 
 ```bash
 # マーケットプレイスを追加
-/plugin marketplace add tubone24/everything-claude-code
+/plugin marketplace add tubone24/claude-code-settings
 
 # プラグインをインストール
-/plugin install claude-code-context-efficient@tubone24/everything-claude-code
+/plugin install claude-code-settings@tubone24/claude-code-settings
 ```
 
 ### 方法2: ワンライナーインストール
