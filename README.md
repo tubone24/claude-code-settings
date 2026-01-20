@@ -71,7 +71,7 @@ everything-claude-code/
 
 ## インストール方法
 
-### 方法1: プラグインとしてインストール（推奨）
+### プラグインとしてインストール（推奨）
 
 Claude Code のプラグインシステムを使用してインストールします。
 
@@ -81,40 +81,6 @@ Claude Code のプラグインシステムを使用してインストールし�
 
 # プラグインをインストール
 /plugin install claude-code-settings@tubone24/claude-code-settings
-```
-
-### 方法2: ワンライナーインストール
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/tubone24/everything-claude-code/main/.claude-plugin/install.sh | bash
-```
-
-### 方法3: 手動インストール
-
-```bash
-# リポジトリをクローン
-git clone https://github.com/tubone24/everything-claude-code.git ~/.claude/plugins/everything-claude-code
-
-# コマンドをシンボリックリンク
-ln -sf ~/.claude/plugins/everything-claude-code/commands/* ~/.claude/commands/
-
-# エージェントをシンボリックリンク
-ln -sf ~/.claude/plugins/everything-claude-code/agents/* ~/.claude/agents/
-
-# フックを設定（settings.jsonにマージ）
-# ~/.claude/settings.json にhooks/hooks.jsonの内容を追加
-```
-
-### 方法4: 必要なファイルのみコピー
-
-必要なコンポーネントのみをコピーして使用することもできます。
-
-```bash
-# 例: コマンドのみコピー
-cp -r commands/* ~/.claude/commands/
-
-# 例: 特定のエージェントのみコピー
-cp agents/code-reviewer.md ~/.claude/agents/
 ```
 
 ## ライセンス
