@@ -1,0 +1,29 @@
+{
+  "name": "claude-code-settings",
+  "version": "1.1.0",
+  "description": "Claude Code Settings(tubone24)",
+  "author": "tubone",
+  "repository": "https://github.com/tubone24/claude-code-settings.git",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "agents",
+    "skills",
+    "hooks",
+    "commands",
+    "context-efficient"
+  ],
+  "components": {
+    "agents": "../agents",
+    "commands": "../commands",
+    "skills": "../skills",
+    "rules": "../rules"
+  },
+  "hooks": "../hooks/hooks.json",
+  "features": {
+    "context_optimization": "MCP → Subagent + CLI migration for context efficiency",
+    "security_hooks": "Sensitive file blocking, dangerous command prevention",
+    "quality_hooks": "Auto-format, TypeScript check, console.log detection",
+    "observability": "Session logging and agent activity tracking"
+  }
+}
