@@ -1,20 +1,23 @@
 {
-  "name": "claude-code-settings",
-  "displayName": "Claude Code Settings(tubone24)",
-  "version": "1.0.0",
-  "description": "Production-ready Claude Code configuration with agents, skills, hooks, commands",
-  "categories": ["productivity", "development", "security"],
-  "tags": ["agents", "skills", "hooks", "commands", "mcp", "typescript", "react", "nextjs"],
-  "installation": {
-    "type": "git",
-    "url": "https://github.com/tubone24/claude-code-settings.git"
+  "name": "tubone24-claude-code-settings",
+  "owner": {
+    "name": "tubone24"
   },
-  "features": [
-    "9+ specialized agents (architect, code-reviewer, security-reviewer, etc.)",
-    "14+ slash commands (/tdd, /plan, /code-review, /think-harder, etc.)",
-    "Security hooks (block sensitive files, dangerous commands)",
-    "Quality hooks (auto-format, TypeScript check, console.log detection)",
-    "20+ MCP server configurations",
-    "Framework-specific skills (React, Next.js, TypeScript)"
+  "metadata": {
+    "description": "Production-ready Claude Code configuration with agents, skills, hooks, commands",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-code-settings",
+      "source": "./",
+      "description": "Production-ready Claude Code configuration with agents, skills, hooks, commands",
+      "version": "1.0.0",
+      "author": {
+        "name": "tubone24"
+      },
+      "keywords": ["agents", "skills", "hooks", "commands", "mcp", "typescript", "react", "nextjs"],
+      "category": "productivity"
+    }
   ]
 }
