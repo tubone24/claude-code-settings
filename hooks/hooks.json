@@ -140,6 +140,19 @@
         ],
         "description": "Desktop notification when Claude needs input"
       }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/plugins/claude-code-settings/hooks/scripts/obsidian-export.py",
+            "timeout": 30
+          }
+        ],
+        "description": "Export session transcript to Obsidian vault"
+      }
     ]
   }
 }

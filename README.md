@@ -59,7 +59,9 @@ everything-claude-code/
 │   └── ...
 ├── hooks/                 # フック設定
 │   ├── hooks.json         # フック定義
-│   └── observability.json # 監視設定
+│   ├── observability.json # 監視設定
+│   └── scripts/           # フック用スクリプト
+│       └── obsidian-export.py  # Obsidian連携
 ├── mcp-configs/           # MCP サーバー設定
 │   └── mcp-servers.json
 └── examples/              # サンプル
@@ -82,6 +84,84 @@ Claude Code のプラグインシステムを使用してインストールし�
 # プラグインをインストール
 /plugin install claude-code-settings@tubone24/claude-code-settings
 ```
+
+---
+
+## Obsidian連携
+
+Claude Codeセッションの内容をObsidianに自動エクスポートする機能です。
+
+### 機能
+
+- **セッション終了時に自動エクスポート**: `SessionEnd` hookでトランスクリプトを解析
+- **構造化されたMarkdown**: プロンプト、編集ファイル、実行コマンドを整理
+- **YAMLフロントマター**: Obsidianのプロパティ/タグに対応
+- **折りたたみ対応**: 長いプロンプトは自動的に `<details>` で折りたたみ
+
+### セットアップ
+
+1. **環境変数を設定**（オプション - デフォルトパスを使う場合は不要）:
+
+```bash
+# ~/.bashrc または ~/.zshrc に追加
+export OBSIDIAN_VAULT_PATH="$HOME/Documents/Obsidian Vault"
+```
+
+デフォルトで以下のパスを自動検出します:
+- `~/Documents/Obsidian Vault`
+- `~/Documents/Obsidian`
+- `~/Obsidian`
+
+2. プラグインをインストールすると、自動的にhookが有効になります
+
+### 出力例
+
+```markdown
+---
+date: 2026-01-28
+time: 15:30:45
+session_id: abc123
+project: my-project
+tags:
+  - claude-code
+  - session
+---
+
+# Claude Code Session - 2026-01-28 15:30:45
+
+## User Prompts
+
+### Prompt 1
+\`\`\`
+ユーザーのプロンプト内容...
+\`\`\`
+
+## Files Edited
+
+- `src/index.ts`
+- `package.json`
+
+## Commands Run
+
+\`\`\`bash
+npm install
+npm test
+\`\`\`
+
+## Tool Usage Summary
+
+| Tool | Count |
+|------|-------|
+| Edit | 5 |
+| Bash | 3 |
+| Read | 2 |
+```
+
+### 保存先
+
+`$OBSIDIAN_VAULT_PATH/Claude-Sessions/claude-session-YYYY-MM-DD-HHMMSS-{session_id}.md`
+
+---
 
 ## ライセンス
 
