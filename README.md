@@ -100,12 +100,17 @@ Claude Codeセッションの内容をObsidianに自動エクスポートする�
 
 ### セットアップ
 
-1. 環境変数 `OBSIDIAN_VAULT_PATH` を設定:
+1. **環境変数を設定**（オプション - デフォルトパスを使う場合は不要）:
 
 ```bash
 # ~/.bashrc または ~/.zshrc に追加
-export OBSIDIAN_VAULT_PATH="$HOME/Documents/Obsidian/MyVault"
+export OBSIDIAN_VAULT_PATH="$HOME/Documents/Obsidian Vault"
 ```
+
+デフォルトで以下のパスを自動検出します:
+- `~/Documents/Obsidian Vault`
+- `~/Documents/Obsidian`
+- `~/Obsidian`
 
 2. プラグインをインストールすると、自動的にhookが有効になります
 

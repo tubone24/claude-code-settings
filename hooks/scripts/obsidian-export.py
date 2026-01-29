@@ -27,6 +27,7 @@ def get_obsidian_vault_path() -> Path:
         # デフォルトパス
         home = Path.home()
         possible_paths = [
+            home / "Documents" / "Obsidian Vault",  # スペース含むパス
             home / "Documents" / "Obsidian",
             home / "Obsidian",
             home / ".obsidian",
