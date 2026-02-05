@@ -10,7 +10,6 @@
 
 このプロジェクトではコンテキストウィンドウの効率的な使用を重視します。
 
-### MCPよりサブエージェントを優先
 - ブラウザ操作: browser-automation（agent-browser CLI）
 - デバッグ: browser-debug（Puppeteer/Lighthouse）
 - ドキュメント検索: docs-lookup（WebSearch/WebFetch）
