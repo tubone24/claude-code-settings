@@ -1,11 +1,11 @@
 #!/bin/bash
 # Claude Code Plugin Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/tubone24/everything-claude-code/main/.claude-plugin/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/tubone24/claude-code-settings/main/.claude-plugin/install.sh | bash
 
 set -e
 
 PLUGIN_NAME="claude-code-settings"
-REPO_URL="https://github.com/tubone24/everything-claude-code.git"
+REPO_URL="https://github.com/tubone24/claude-code-settings.git"
 CLAUDE_DIR="$HOME/.claude"
 PLUGIN_DIR="$CLAUDE_DIR/plugins/$PLUGIN_NAME"
 
