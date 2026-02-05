@@ -2,6 +2,7 @@
 name: browser-debug
 description: Webアプリのエラーデバッグ。agent-browser CLIでコンソールログ、ネットワークエラー、DOM状態を確認。コンテキスト93%削減。
 tools: Bash, Read
+color: red
 model: haiku
 ---
 

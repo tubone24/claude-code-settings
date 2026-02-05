@@ -1,7 +1,7 @@
 ---
 name: research-analyst
 description: 技術調査・競合分析・ライブラリ比較を実行。技術選定や実装方針の決定に使用。
-tools: WebSearch, WebFetch, Read, Write
+tools: WebSearch, WebFetch, Read, Write, AskUserQuestion
 model: sonnet
 ---
 

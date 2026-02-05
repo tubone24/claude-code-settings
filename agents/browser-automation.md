@@ -2,6 +2,7 @@
 name: browser-automation
 description: Webブラウザの自動操作を実行。agent-browser CLIを使用してコンテキストを93%削減。スクリーンショット撮影、フォーム入力、ページ操作に使用。
 tools: Bash, Read
+color: pink
 model: haiku
 ---
 

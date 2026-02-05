@@ -1,6 +1,7 @@
 ---
 name: frontend-design-system
 description: フロントエンドUIデザインを洗練された独自性のあるスタイルで生成します。ランディングページ、ダッシュボード、Webアプリケーションのデザイン、UIコンポーネント作成時に使用してください。「AIっぽい」汎用デザインを避け、プロフェッショナルで記憶に残るUIを実現します。
+user-invocable: true
 ---
 
 # Frontend Design System
