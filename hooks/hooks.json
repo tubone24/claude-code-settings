@@ -23,44 +23,24 @@
         "description": "Block dangerous commands (force push, rm -rf /, etc)"
       },
       {
-        "matcher": "tool == \"Bash\" && tool_input.command matches \"(npm run dev|pnpm( run)? dev|yarn dev|bun run dev)\"",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "#!/bin/bash\ninput=$(cat)\necho '[Hook] BLOCKED: Dev server must run in tmux' >&2\necho '[Hook] Use: tmux new -d -s dev \"npm run dev\" && tmux attach -t dev' >&2\nexit 2"
-          }
-        ],
-        "description": "Block dev servers outside tmux"
-      },
-      {
-        "matcher": "tool == \"Bash\" && tool_input.command matches \"(npm (install|test)|pnpm (install|test)|yarn (install|test)|bun (install|test)|cargo build|make|docker|pytest|vitest|playwright)\"",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "#!/bin/bash\ninput=$(cat)\nif [ -z \"$TMUX\" ]; then\n  echo '[Hook] Consider running in tmux for session persistence' >&2\n  echo '[Hook] tmux new -s dev  |  tmux attach -t dev' >&2\nfi\necho \"$input\""
-          }
-        ],
-        "description": "Reminder to use tmux for long-running commands"
-      },
-      {
         "matcher": "tool == \"Bash\" && tool_input.command matches \"git push\"",
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\n# Open editor for review before pushing\necho '[Hook] Review changes before push...' >&2\n# Uncomment your preferred editor:\n# zed . 2>/dev/null\n# code . 2>/dev/null\n# cursor . 2>/dev/null\necho '[Hook] Press Enter to continue with push or Ctrl+C to abort...' >&2\nread -r"
+            "command": "#!/bin/bash\ninput=$(cat)\necho '[Hook] git push detected - ensure changes are reviewed' >&2\nosascript -e 'display notification \"git pushを実行します\" with title \"Claude Code\" sound name \"Ping\"' 2>/dev/null || true\necho \"$input\""
           }
         ],
-        "description": "Pause before git push to review changes"
+        "description": "Notify before git push"
       },
       {
-        "matcher": "tool == \"Write\" && tool_input.file_path matches \"\\\\.(md|txt)$\" && !(tool_input.file_path matches \"README\\\\.md|CLAUDE\\\\.md|AGENTS\\\\.md|CONTRIBUTING\\\\.md\")",
+        "matcher": "tool == \"Write\" && tool_input.file_path matches \"\\\\.(md|txt)$\" && !(tool_input.file_path matches \"README\\\\.md|CLAUDE\\\\.md|AGENTS\\\\.md|CONTRIBUTING\\\\.md|context-snapshot\\\\.md\")",
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\n# Block creation of unnecessary documentation files\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\n\nif [[ \"$file_path\" =~ \\.(md|txt)$ ]] && [[ ! \"$file_path\" =~ (README|CLAUDE|AGENTS|CONTRIBUTING)\\.md$ ]]; then\n  echo \"[Hook] BLOCKED: Unnecessary documentation file creation\" >&2\n  echo \"[Hook] File: $file_path\" >&2\n  echo \"[Hook] Use README.md for documentation instead\" >&2\n  exit 1\nfi\n\necho \"$input\""
+            "command": "#!/bin/bash\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nif [[ \"$file_path\" =~ \\.(md|txt)$ ]] && [[ ! \"$file_path\" =~ (README|CLAUDE|AGENTS|CONTRIBUTING|context-snapshot)\\.md$ ]]; then\n  echo \"[Hook] BLOCKED: Unnecessary documentation file creation\" >&2\n  echo \"[Hook] File: $file_path\" >&2\n  exit 1\nfi\necho \"$input\""
           }
         ],
-        "description": "Block creation of random .md files - keeps docs consolidated"
+        "description": "Block creation of random .md files"
       }
     ],
     "PostToolUse": [
@@ -69,43 +49,64 @@
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\n# Auto-detect PR creation and log useful info\ninput=$(cat)\ncmd=$(echo \"$input\" | jq -r '.tool_input.command')\n\nif echo \"$cmd\" | grep -qE 'gh pr create'; then\n  output=$(echo \"$input\" | jq -r '.tool_output.output // \"\"')\n  pr_url=$(echo \"$output\" | grep -oE 'https://github.com/[^/]+/[^/]+/pull/[0-9]+')\n  \n  if [ -n \"$pr_url\" ]; then\n    echo \"[Hook] PR created: $pr_url\" >&2\n    echo \"[Hook] Checking GitHub Actions status...\" >&2\n    repo=$(echo \"$pr_url\" | sed -E 's|https://github.com/([^/]+/[^/]+)/pull/[0-9]+|\\1|')\n    pr_num=$(echo \"$pr_url\" | sed -E 's|.*/pull/([0-9]+)|\\1|')\n    echo \"[Hook] To review PR: gh pr review $pr_num --repo $repo\" >&2\n  fi\nfi\n\necho \"$input\""
+            "command": "#!/bin/bash\ninput=$(cat)\ncmd=$(echo \"$input\" | jq -r '.tool_input.command')\nif echo \"$cmd\" | grep -qE 'gh pr create'; then\n  output=$(echo \"$input\" | jq -r '.tool_output.output // \"\"')\n  pr_url=$(echo \"$output\" | grep -oE 'https://github.com/[^/]+/[^/]+/pull/[0-9]+')\n  if [ -n \"$pr_url\" ]; then\n    echo \"[Hook] PR created: $pr_url\" >&2\n    osascript -e \"display notification \\\"PR作成完了: $pr_url\\\" with title \\\"Claude Code\\\" sound name \\\"Hero\\\"\" 2>/dev/null || true\n  fi\nfi\necho \"$input\""
           }
         ],
-        "description": "Log PR URL and provide review command after PR creation"
+        "description": "Notify PR creation"
+      },
+      {
+        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.py$\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  if command -v black >/dev/null 2>&1; then\n    black --check \"$file_path\" 2>&1 | head -3 >&2 || echo \"[Hook] black: format issues detected\" >&2\n  fi\n  if command -v mypy >/dev/null 2>&1; then\n    mypy \"$file_path\" --no-error-summary 2>&1 | head -5 >&2 || true\n  fi\nfi\necho \"$input\""
+          }
+        ],
+        "description": "Python: Check formatting (black) and types (mypy)"
+      },
+      {
+        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.ts$\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  if command -v npx >/dev/null 2>&1; then\n    npx tsc --noEmit \"$file_path\" 2>&1 | head -5 >&2 || true\n  fi\nfi\necho \"$input\""
+          }
+        ],
+        "description": "TypeScript: Check types (tsc --noEmit)"
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.(ts|tsx|js|jsx)$\"",
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\n# Auto-format with Prettier after editing JS/TS files\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\n\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  if command -v prettier >/dev/null 2>&1; then\n    prettier --write \"$file_path\" 2>&1 | head -5 >&2\n  fi\nfi\n\necho \"$input\""
+            "command": "#!/bin/bash\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  command -v prettier >/dev/null 2>&1 && prettier --write \"$file_path\" 2>&1 | head -3 >&2\nfi\necho \"$input\""
           }
         ],
-        "description": "Auto-format JS/TS files with Prettier after edits"
+        "description": "Auto-format JS/TS with Prettier"
       },
       {
         "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.(ts|tsx)$\"",
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\n# Run TypeScript check after editing TS files\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\n\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  dir=$(dirname \"$file_path\")\n  project_root=\"$dir\"\n  while [ \"$project_root\" != \"/\" ] && [ ! -f \"$project_root/package.json\" ]; do\n    project_root=$(dirname \"$project_root\")\n  done\n  \n  if [ -f \"$project_root/tsconfig.json\" ]; then\n    cd \"$project_root\" && npx tsc --noEmit --pretty false 2>&1 | grep \"$file_path\" | head -10 >&2 || true\n  fi\nfi\n\necho \"$input\""
+            "command": "#!/bin/bash\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  console_logs=$(grep -n \"console\\\\.log\" \"$file_path\" 2>/dev/null || true)\n  [ -n \"$console_logs\" ] && echo \"[Hook] WARNING: console.log found\" >&2\nfi\necho \"$input\""
           }
         ],
-        "description": "TypeScript check after editing .ts/.tsx files"
-      },
-      {
-        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.(ts|tsx|js|jsx)$\"",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "#!/bin/bash\n# Warn about console.log in edited files\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\n\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  console_logs=$(grep -n \"console\\\\.log\" \"$file_path\" 2>/dev/null || true)\n  \n  if [ -n \"$console_logs\" ]; then\n    echo \"[Hook] WARNING: console.log found in $file_path\" >&2\n    echo \"$console_logs\" | head -5 >&2\n    echo \"[Hook] Remove console.log before committing\" >&2\n  fi\nfi\n\necho \"$input\""
-          }
-        ],
-        "description": "Warn about console.log statements after edits"
+        "description": "Warn about console.log"
       }
     ],
     "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\ninput=$(cat)\n\n# Save context snapshot\nSNAPSHOT_DIR=\"$HOME/.claude/snapshots\"\nmkdir -p \"$SNAPSHOT_DIR\"\nSNAPSHOT_FILE=\"$SNAPSHOT_DIR/context-$(date '+%Y%m%d-%H%M%S').md\"\n\ncat > \"$SNAPSHOT_FILE\" << 'SNAPSHOT_EOF'\n# Context Snapshot\n**Date:** $(date '+%Y-%m-%d %H:%M:%S')\n**Directory:** $(pwd)\n\n## Recent Git Changes\n$(git diff --stat HEAD 2>/dev/null | tail -20 || echo 'No git repo')\n\n## Modified Files (uncommitted)\n$(git status --short 2>/dev/null | head -20 || echo 'N/A')\n\n## Recent Commands (from history)\nSee ~/.claude/logs/agent-$(date '+%Y%m%d').log\nSNAPSHOT_EOF\n\necho \"[Hook] Context snapshot saved: $SNAPSHOT_FILE\" >&2\necho \"$input\"",
+            "timeout": 10
+          }
+        ],
+        "description": "Save context snapshot on stop"
+      },
       {
         "matcher": "*",
         "hooks": [
@@ -123,7 +124,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\nmkdir -p ~/.claude/logs\necho \"[$(date '+%Y-%m-%d %H:%M:%S')] Session started in $(pwd)\" >> ~/.claude/logs/sessions.log"
+            "command": "#!/bin/bash\nmkdir -p ~/.claude/logs ~/.claude/snapshots\necho \"[$(date '+%Y-%m-%d %H:%M:%S')] SESSION START in $(pwd)\" >> ~/.claude/logs/agent-$(date '+%Y%m%d').log"
           }
         ],
         "description": "Log session start"
@@ -135,10 +136,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\nif command -v osascript &>/dev/null; then\n  osascript -e 'display notification \"Claude needs attention\" with title \"Claude Code\"' 2>/dev/null\nelif command -v notify-send &>/dev/null; then\n  notify-send 'Claude Code' 'Claude needs attention' 2>/dev/null\nfi"
+            "command": "osascript -e 'display notification \"Claude Codeが許可を求めています\" with title \"Claude Code\" subtitle \"確認待ち\" sound name \"Glass\"'"
           }
         ],
-        "description": "Desktop notification when Claude needs input"
+        "description": "Notify permission request with sound"
       }
     ],
     "SessionEnd": [
@@ -147,11 +148,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/plugins/claude-code-settings/hooks/scripts/obsidian-export.py",
+            "command": "#!/bin/bash\necho \"[$(date '+%H:%M:%S')] SESSION END\" >> ~/.claude/logs/agent-$(date '+%Y%m%d').log\nosascript -e 'display notification \"セッションが終了しました\" with title \"Claude Code\" subtitle \"処理完了\" sound name \"Hero\"' 2>/dev/null || true\npython3 ~/.claude/plugins/claude-code-settings/hooks/scripts/obsidian-export.py 2>/dev/null || true",
             "timeout": 30
           }
         ],
-        "description": "Export session transcript to Obsidian vault"
+        "description": "Notify session end and export to Obsidian"
       }
     ]
   }

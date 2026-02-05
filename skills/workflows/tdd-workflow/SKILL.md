@@ -1,6 +1,6 @@
 ---
 name: tdd-workflow
-description: Use this skill when writing new features, fixing bugs, or refactoring code. Enforces test-driven development with 80%+ coverage including unit, integration, and E2E tests.
+description: 新機能の作成、バグ修正、リファクタリング時に使用。テスト駆動開発を徹底し、ユニット・統合・E2Eテストで80%以上のカバレッジを確保。
 ---
 
 # テスト駆動開発ワークフロー
