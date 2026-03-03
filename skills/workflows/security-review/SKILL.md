@@ -490,5 +490,3 @@ test('enforces rate limits', async () => {
 - [Web Security Academy](https://portswigger.net/web-security)
 
 ---
-
-**重要**: セキュリティはオプションではありません。1つの脆弱性がプラットフォーム全体を危険にさらす可能性があります。迷ったら、安全側に倒してください。

@@ -140,6 +140,17 @@
           }
         ],
         "description": "Notify permission request with sound"
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/slack-notify.sh",
+            "timeout": 10
+          }
+        ],
+        "description": "Send Slack notification on permission request (requires SLACK_WEBHOOK_URL)"
       }
     ],
     "SessionEnd": [
