@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "Read",
+      "Glob",
+      "Grep",
+      "LSP",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(find:*)",
+      "Bash(which:*)",
+      "Bash(pwd:*)",
+      "Bash(tree:*)",
+      "Bash(wc:*)",
+      "Bash(file:*)",
+      "Bash(stat:*)",
+      "Bash(echo:*)",
+      "Bash(jq:*)",
+      "Bash(*| jq*)",
+      "Bash(*| grep*)",
+      "Bash(*| head*)",
+      "Bash(*| tail*)",
+      "Bash(diff *)",
+      "Bash(cp ~/.claude/*)",
+      "Bash(jq *)",
+      "Bash(mv /tmp/*)"
+    ],
+    "defaultMode": "default"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\ninput=$(cat)\np=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nBLOCKED=(\".env\" \".env.local\" \".env.production\" \"credentials\" \"secrets\" \".ssh\" \"id_rsa\" \"id_ed25519\" \".pem\" \".key\" \"serviceAccount\" \".npmrc\" \".pypirc\")\nfor b in \"${BLOCKED[@]}\"; do\n  if [[ \"$p\" == *\"$b\"* ]]; then\n    echo \"[Hook] BLOCKED: Cannot edit sensitive file: $p\" >&2\n    exit 2\n  fi\ndone\necho \"$input\""
+          }
+        ],
+        "description": "Block editing sensitive files (.env, credentials, keys)"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\ninput=$(cat)\ncmd=$(echo \"$input\" | jq -r '.tool_input.command // \"\"')\nif echo \"$cmd\" | grep -qE 'git push.*(--force|-f)'; then\n  echo '[Hook] BLOCKED: Force push is dangerous. Use --force-with-lease if necessary.' >&2\n  exit 2\nfi\nif echo \"$cmd\" | grep -qE 'rm -rf /|:(){ :|:& };:|> /dev/sd|mkfs\\.|dd if='; then\n  echo '[Hook] BLOCKED: Potentially destructive command detected' >&2\n  exit 2\nfi\necho \"$input\""
+          }
+        ],
+        "description": "Block dangerous commands (force push, rm -rf /, etc)"
+      },
+      {
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"git push\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\ninput=$(cat)\necho '[Hook] git push detected - ensure changes are reviewed' >&2\nosascript -e 'display notification \"git pushを実行します\" with title \"Claude Code\" sound name \"Ping\"' 2>/dev/null || true\necho \"$input\""
+          }
+        ],
+        "description": "Notify before git push"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.(ts|tsx)$\"",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  console_logs=$(grep -n \"console\\\\.log\" \"$file_path\" 2>/dev/null || true)\n  [ -n \"$console_logs\" ] && echo \"[Hook] WARNING: console.log found\" >&2\nfi\necho \"$input\""
+          }
+        ],
+        "description": "Warn about console.log"
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\ninput=$(cat)\n\n# Save context snapshot\nSNAPSHOT_DIR=\"$HOME/.claude/snapshots\"\nmkdir -p \"$SNAPSHOT_DIR\"\nSNAPSHOT_FILE=\"$SNAPSHOT_DIR/context-$(date '+%Y%m%d-%H%M%S').md\"\n\ncat > \"$SNAPSHOT_FILE\" << SNAPSHOT_EOF\n# Context Snapshot\n**Date:** $(date '+%Y-%m-%d %H:%M:%S')\n**Directory:** $(pwd)\n\n## Recent Git Changes\n$(git diff --stat HEAD 2>/dev/null | tail -20 || echo 'No git repo')\n\n## Modified Files (uncommitted)\n$(git status --short 2>/dev/null | head -20 || echo 'N/A')\n\n## Recent Commands (from history)\nSee ~/.claude/logs/agent-$(date '+%Y%m%d').log\nSNAPSHOT_EOF\n\necho \"[Hook] Context snapshot saved: $SNAPSHOT_FILE\" >&2\necho \"$input\"",
+            "timeout": 10
+          }
+        ],
+        "description": "Save context snapshot on stop"
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\ninput=$(cat)\nif git rev-parse --git-dir > /dev/null 2>&1; then\n  files=$(git diff --name-only HEAD 2>/dev/null | grep -E '\\.(ts|tsx|js|jsx)$' || true)\n  [ -n \"$files\" ] && while IFS= read -r f; do\n    [ -f \"$f\" ] && grep -q \"console\\.log\" \"$f\" 2>/dev/null && echo \"[Hook] WARNING: console.log in $f\" >&2\n  done <<< \"$files\"\nfi\necho \"$input\""
+          }
+        ],
+        "description": "Final audit for console.log"
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/slack-notify.sh",
+            "timeout": 10
+          }
+        ],
+        "description": "Send Slack notification on stop (requires SLACK_WEBHOOK_URL)"
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\nmkdir -p ~/.claude/logs ~/.claude/snapshots\necho \"[$(date '+%Y-%m-%d %H:%M:%S')] SESSION START in $(pwd)\" >> ~/.claude/logs/agent-$(date '+%Y%m%d').log"
+          }
+        ],
+        "description": "Log session start"
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Claude Codeが許可を求めています\" with title \"Claude Code\" subtitle \"確認待ち\" sound name \"Glass\"'"
+          }
+        ],
+        "description": "Notify permission request with sound"
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/slack-notify.sh",
+            "timeout": 10
+          }
+        ],
+        "description": "Send Slack notification on permission request (requires SLACK_WEBHOOK_URL)"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "#!/bin/bash\necho \"[$(date '+%H:%M:%S')] SESSION END\" >> ~/.claude/logs/agent-$(date '+%Y%m%d').log\nosascript -e 'display notification \"セッションが終了しました\" with title \"Claude Code\" subtitle \"処理完了\" sound name \"Hero\"' 2>/dev/null || true\npython3 ~/.claude/hooks/scripts/obsidian-export.py 2>> ~/.claude/logs/agent-$(date '+%Y%m%d').log || true",
+            "timeout": 30
+          }
+        ],
+        "description": "Notify session end and export to Obsidian"
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y ccstatusline@latest",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "claude-code-settings@tubone24-claude-code-settings": true
+  },
+  "language": "日本語",
+  "spinnerVerbs": {
+    "mode": "replace",
+    "verbs": [
+      "熟慮断行",
+      "沈思黙考",
+      "三思後行",
+      "推敲反復",
+      "鋭意進行",
+      "黙々作業",
+      "着実遂行",
+      "試行錯誤",
+      "百折不撓",
+      "格物致知",
+      "黙照禅観",
+      "静慮内省",
+      "観心止念",
+      "虚心坦懐",
+      "行雲流水",
+      "随処作主",
+      "逍遥遊心",
+      "日用無碍",
+      "看脚下",
+      "明心見性"
+    ]
+  },
+  "alwaysThinkingEnabled": true,
+  "feedbackSurveyState": {
+    "lastShownTime": 1754037628446
+  },
+  "effortLevel": "high"
+}
