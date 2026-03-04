@@ -1,72 +1,88 @@
 #!/bin/bash
-# Slack Webhook通知スクリプト
-# Notificationイベントで呼び出され、Slack incoming webhookに通知を送信する
-# 環境変数 SLACK_WEBHOOK_URL が未設定の場合はサイレントにスキップ
+# Claude Code Notification → Slack 通知スクリプト
+# ~/.claude/.env に SLACK_WEBHOOK_URL を設定してください
+#
+# 設定方法:
+#   echo 'SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...' >> ~/.claude/.env
 
-# ~/.claude/.envから環境変数を安全に読み込み（source不使用でインジェクション防止）
+input=$(cat)
+
+# ~/.claude/.env から環境変数を読み込む
 if [ -f "$HOME/.claude/.env" ]; then
-  while IFS='=' read -r key value; do
-    [[ "$key" =~ ^[[:space:]]*# ]] && continue
-    [[ -z "$key" ]] && continue
-    key=$(echo "$key" | xargs)
-    if [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-      export "$key=$value"
-    fi
-  done < "$HOME/.claude/.env"
+  set -a
+  source "$HOME/.claude/.env"
+  set +a
 fi
 
-# SLACK_WEBHOOK_URL未設定ならサイレントに終了
-if [ -z "$SLACK_WEBHOOK_URL" ]; then
+WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
+if [ -z "$WEBHOOK_URL" ]; then
+  echo "[Slack Hook] SLACK_WEBHOOK_URL not set, skipping" >&2
+  echo "$input"
   exit 0
 fi
 
-# stdinからJSON入力を読み取り
-input=$(cat)
-
-# ホスト名・タイムスタンプ
-hostname=$(hostname 2>/dev/null || echo "unknown")
+# フック入力からメッセージを抽出
+message=$(echo "$input" | jq -r '.message // "Claude Codeが許可を求めています"')
+title=$(echo "$input" | jq -r '.title // "Claude Code"')
+cwd=$(echo "$input" | jq -r '.cwd // "unknown"')
 timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+project_name=$(basename "$cwd")
 
-# jqが利用可能な場合: jqで安全にペイロードを構築（自動エスケープ）
-if command -v jq >/dev/null 2>&1; then
-  message=$(echo "$input" | jq -r '.message // "承認待ちです"')
-  cwd=$(echo "$input" | jq -r '.cwd // "unknown"')
-  session_id=$(echo "$input" | jq -r '.session_id // "unknown"')
+# Block Kit形式のリッチ通知ペイロード
+payload=$(jq -n \
+  --arg fallback "${title}: ${message}" \
+  --arg message "$message" \
+  --arg cwd "$cwd" \
+  --arg project "$project_name" \
+  --arg ts "$timestamp" \
+  '{
+    text: $fallback,
+    blocks: [
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: "Claude Code - 確認待ち",
+          emoji: true
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: $message
+        }
+      },
+      {
+        type: "divider"
+      },
+      {
+        type: "section",
+        fields: [
+          {
+            type: "mrkdwn",
+            text: ("*:file_folder: プロジェクト:*\n" + $project)
+          },
+          {
+            type: "mrkdwn",
+            text: ("*:round_pushpin: パス:*\n`" + $cwd + "`")
+          }
+        ]
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: (":clock1: " + $ts + " | :robot_face: Claude Code")
+          }
+        ]
+      }
+    ]
+  }')
 
-  payload=$(jq -n \
-    --arg msg "$message" \
-    --arg cwd "$cwd" \
-    --arg sid "$session_id" \
-    --arg host "$hostname" \
-    --arg ts "$timestamp" \
-    '{
-      text: ":bell: Claude Code 承認待ち",
-      blocks: [
-        { type: "header", text: { type: "plain_text", text: "Claude Code - 承認待ち", emoji: true } },
-        { type: "section", fields: [
-          { type: "mrkdwn", text: ("*メッセージ:*\n" + $msg) },
-          { type: "mrkdwn", text: ("*作業ディレクトリ:*\n`" + $cwd + "`") }
-        ]},
-        { type: "context", elements: [
-          { type: "mrkdwn", text: (":computer: " + $host + " | :clock1: " + $ts + " | Session: `" + $sid + "`") }
-        ]}
-      ]
-    }')
-else
-  # jqなしのフォールバック: 最低限のプレーンテキスト通知
-  cwd="$(pwd)"
-  payload="{\"text\":\":bell: Claude Code 承認待ち (dir: ${cwd})\"}"
-fi
-
-# curl送信（エラー時はstderrにログ出力、全体はエラーにしない）
-response=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-  -H 'Content-type: application/json' \
+curl -s -X POST -H 'Content-type: application/json' \
   --data "$payload" \
-  "$SLACK_WEBHOOK_URL" \
-  --max-time 5 2>/dev/null) || true
+  "$WEBHOOK_URL" > /dev/null 2>&1
 
-if [ "$response" != "200" ] && [ "$response" != "000" ] && [ -n "$response" ]; then
-  echo "[slack-notify] Warning: Slack API returned HTTP $response" >&2
-fi
-
-exit 0
+echo "$input"

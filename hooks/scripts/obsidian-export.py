@@ -31,7 +31,7 @@ def get_obsidian_vault_path() -> Path:
             home / "Documents" / "Obsidian",
             home / "Obsidian",
             home / ".obsidian",
-        ]
+            ]
         for path in possible_paths:
             if path.exists():
                 vault_path = str(path)
