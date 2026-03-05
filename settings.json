@@ -49,10 +49,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\ninput=$(cat)\ncmd=$(echo \"$input\" | jq -r '.tool_input.command // \"\"')\nif echo \"$cmd\" | grep -qE 'git push.*(--force|-f)'; then\n  echo '[Hook] BLOCKED: Force push is dangerous. Use --force-with-lease if necessary.' >&2\n  exit 2\nfi\nif echo \"$cmd\" | grep -qE 'rm -rf /|:(){ :|:& };:|> /dev/sd|mkfs\\.|dd if='; then\n  echo '[Hook] BLOCKED: Potentially destructive command detected' >&2\n  exit 2\nfi\necho \"$input\""
+            "command": "#!/bin/bash\ninput=$(cat)\ncmd=$(echo \"$input\" | jq -r '.tool_input.command // \"\"')\nif echo \"$cmd\" | grep -qE 'git push.*(--force|-f)'; then\n  echo '[Hook] BLOCKED: Force push is dangerous. Use --force-with-lease if necessary.' >&2\n  exit 2\nfi\nif echo \"$cmd\" | grep -qE 'rm -rf /|:(){ :|:& };:|> /dev/sd|mkfs\\.|dd if='; then\n  echo '[Hook] BLOCKED: Potentially destructive command detected' >&2\n  exit 2\nfi\nif echo \"$cmd\" | grep -qE '[.]env'; then\n  echo '[Hook] BLOCKED: Access to environment files is forbidden' >&2\n  exit 2\nfi\necho \"$input\""
           }
         ],
-        "description": "Block dangerous commands (force push, rm -rf /, etc)"
+        "description": "Block dangerous commands (force push, rm -rf /, env file access, etc)"
       },
       {
         "matcher": "tool == \"Bash\" && tool_input.command matches \"git push\"",
