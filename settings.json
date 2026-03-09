@@ -35,34 +35,14 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Read|Edit|Write",
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\ninput=$(cat)\np=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nBLOCKED=(\".env\" \".env.local\" \".env.production\" \"credentials\" \"secrets\" \".ssh\" \"id_rsa\" \"id_ed25519\" \".pem\" \".key\" \"serviceAccount\" \".npmrc\" \".pypirc\")\nfor b in \"${BLOCKED[@]}\"; do\n  if [[ \"$p\" == *\"$b\"* ]]; then\n    echo \"[Hook] BLOCKED: Cannot edit sensitive file: $p\" >&2\n    exit 2\n  fi\ndone\necho \"$input\""
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
           }
-        ],
-        "description": "Block editing sensitive files (.env, credentials, keys)"
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "#!/bin/bash\ninput=$(cat)\ncmd=$(echo \"$input\" | jq -r '.tool_input.command // \"\"')\nif echo \"$cmd\" | grep -qE 'git push.*(--force|-f)'; then\n  echo '[Hook] BLOCKED: Force push is dangerous. Use --force-with-lease if necessary.' >&2\n  exit 2\nfi\nif echo \"$cmd\" | grep -qE 'rm -rf /|:(){ :|:& };:|> /dev/sd|mkfs\\.|dd if='; then\n  echo '[Hook] BLOCKED: Potentially destructive command detected' >&2\n  exit 2\nfi\nif echo \"$cmd\" | grep -qE '[.]env'; then\n  echo '[Hook] BLOCKED: Access to environment files is forbidden' >&2\n  exit 2\nfi\necho \"$input\""
-          }
-        ],
-        "description": "Block dangerous commands (force push, rm -rf /, env file access, etc)"
-      },
-      {
-        "matcher": "tool == \"Bash\" && tool_input.command matches \"git push\"",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "#!/bin/bash\ninput=$(cat)\necho '[Hook] git push detected - ensure changes are reviewed' >&2\nosascript -e 'display notification \"git pushを実行します\" with title \"Claude Code\" sound name \"Ping\"' 2>/dev/null || true\necho \"$input\""
-          }
-        ],
-        "description": "Notify before git push"
+        ]
       }
     ],
     "PostToolUse": [
@@ -73,8 +53,17 @@
             "type": "command",
             "command": "#!/bin/bash\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  console_logs=$(grep -n \"console\\\\.log\" \"$file_path\" 2>/dev/null || true)\n  [ -n \"$console_logs\" ] && echo \"[Hook] WARNING: console.log found\" >&2\nfi\necho \"$input\""
           }
-        ],
-        "description": "Warn about console.log"
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [
@@ -86,8 +75,7 @@
             "command": "#!/bin/bash\ninput=$(cat)\n\n# Save context snapshot\nSNAPSHOT_DIR=\"$HOME/.claude/snapshots\"\nmkdir -p \"$SNAPSHOT_DIR\"\nSNAPSHOT_FILE=\"$SNAPSHOT_DIR/context-$(date '+%Y%m%d-%H%M%S').md\"\n\ncat > \"$SNAPSHOT_FILE\" << SNAPSHOT_EOF\n# Context Snapshot\n**Date:** $(date '+%Y-%m-%d %H:%M:%S')\n**Directory:** $(pwd)\n\n## Recent Git Changes\n$(git diff --stat HEAD 2>/dev/null | tail -20 || echo 'No git repo')\n\n## Modified Files (uncommitted)\n$(git status --short 2>/dev/null | head -20 || echo 'N/A')\n\n## Recent Commands (from history)\nSee ~/.claude/logs/agent-$(date '+%Y%m%d').log\nSNAPSHOT_EOF\n\necho \"[Hook] Context snapshot saved: $SNAPSHOT_FILE\" >&2\necho \"$input\"",
             "timeout": 10
           }
-        ],
-        "description": "Save context snapshot on stop"
+        ]
       },
       {
         "matcher": "*",
@@ -96,8 +84,7 @@
             "type": "command",
             "command": "#!/bin/bash\ninput=$(cat)\nif git rev-parse --git-dir > /dev/null 2>&1; then\n  files=$(git diff --name-only HEAD 2>/dev/null | grep -E '\\.(ts|tsx|js|jsx)$' || true)\n  [ -n \"$files\" ] && while IFS= read -r f; do\n    [ -f \"$f\" ] && grep -q \"console\\.log\" \"$f\" 2>/dev/null && echo \"[Hook] WARNING: console.log in $f\" >&2\n  done <<< \"$files\"\nfi\necho \"$input\""
           }
-        ],
-        "description": "Final audit for console.log"
+        ]
       },
       {
         "matcher": "*",
@@ -107,8 +94,17 @@
             "command": "bash ~/.claude/hooks/scripts/slack-notify.sh",
             "timeout": 10
           }
-        ],
-        "description": "Send Slack notification on stop (requires SLACK_WEBHOOK_URL)"
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -119,8 +115,17 @@
             "type": "command",
             "command": "#!/bin/bash\nmkdir -p ~/.claude/logs ~/.claude/snapshots\necho \"[$(date '+%Y-%m-%d %H:%M:%S')] SESSION START in $(pwd)\" >> ~/.claude/logs/agent-$(date '+%Y%m%d').log"
           }
-        ],
-        "description": "Log session start"
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Notification": [
@@ -131,8 +136,7 @@
             "type": "command",
             "command": "osascript -e 'display notification \"Claude Codeが許可を求めています\" with title \"Claude Code\" subtitle \"確認待ち\" sound name \"Glass\"'"
           }
-        ],
-        "description": "Notify permission request with sound"
+        ]
       },
       {
         "matcher": "*",
@@ -142,8 +146,17 @@
             "command": "bash ~/.claude/hooks/scripts/slack-notify.sh",
             "timeout": 10
           }
-        ],
-        "description": "Send Slack notification on permission request (requires SLACK_WEBHOOK_URL)"
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -155,8 +168,113 @@
             "command": "#!/bin/bash\necho \"[$(date '+%H:%M:%S')] SESSION END\" >> ~/.claude/logs/agent-$(date '+%Y%m%d').log\nosascript -e 'display notification \"セッションが終了しました\" with title \"Claude Code\" subtitle \"処理完了\" sound name \"Hero\"' 2>/dev/null || true\npython3 ~/.claude/hooks/scripts/obsidian-export.py 2>> ~/.claude/logs/agent-$(date '+%Y%m%d').log || true",
             "timeout": 30
           }
-        ],
-        "description": "Notify session end and export to Obsidian"
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "InstructionsLoaded": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "ConfigChange": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
+            "timeout": 10
+          }
+        ]
       }
     ]
   },
@@ -198,6 +316,5 @@
   "alwaysThinkingEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754037628446
-  },
-  "effortLevel": "high"
+  }
 }
