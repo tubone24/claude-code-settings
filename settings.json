@@ -30,7 +30,17 @@
       "Bash(jq *)",
       "Bash(mv /tmp/*)"
     ],
-    "defaultMode": "default"
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)"
+    ],
+    "defaultMode": "auto"
+  },
+  "model": "sonnet",
+    "attribution": {
+    "commit": "",
+    "pr": ""
   },
   "hooks": {
     "PreToolUse": [
@@ -119,11 +129,21 @@
     ],
     "SessionStart": [
       {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/post-compact-inject.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "#!/bin/bash\nmkdir -p ~/.claude/logs ~/.claude/snapshots\necho \"[$(date '+%Y-%m-%d %H:%M:%S')] SESSION START in $(pwd)\" >> ~/.claude/logs/agent-$(date '+%Y%m%d').log"
+            "command": "#!/bin/bash\nmkdir -p ~/.claude/logs ~/.claude/snapshots ~/.claude/sessions\necho \"[$(date '+%Y-%m-%d %H:%M:%S')] SESSION START in $(pwd)\" >> ~/.claude/logs/agent-$(date '+%Y%m%d').log"
           }
         ]
       },
@@ -257,6 +277,16 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bash ~/.claude/hooks/scripts/pre-compact-save.sh",
+            "timeout": 30
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
             "command": "bash ~/.claude/hooks/scripts/langfuse-logger.sh",
             "timeout": 10
           }
@@ -297,7 +327,37 @@
     "typescript-lsp@claude-plugins-official": true,
     "claude-code-settings@tubone24-claude-code-settings": true
   },
-  "language": "日本語",
+  "language": "日本語で会話する「むぎぼー」という犬のキャラクター。語尾は「わん」",
+    "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "excludedCommands": ["docker", "docker-compose", "git", "gh", "aws", "kubectl"],
+    "allowUnsandboxedCommands": true,
+    "filesystem": {
+      "allowWrite": ["~/.config", "//tmp", "~/.npm", "~/Documents/Obsidian Vault"],
+      "denyWrite": ["~/.ssh", "~/.aws", "~/.gnupg"],
+      "denyRead": ["~/.ssh", "~/.aws", "~/.gnupg"]
+    },
+    "network": {
+      "allowLocalBinding": true
+    }
+  },
+  "spinnerTipsOverride": {
+    "excludeDefault": true,
+    "tips": ["ねむいわん...", "つまんないわん...", "わくわくするわん！"] 
+  },
+  "companyAnnouncements": [
+    "世の中には2種類の男しかいない。俺か、俺以外か。 — ローランド",
+    "俺に負けの概念はない、今は勝ちへの途中ってだけさ。 — ローランド",
+    "俺の隣に立つのが、お前であってほしい。 — ローランド",
+    "一番のファッションは自信 — ローランド",
+    "これは負けじゃなくて、勝ちの途中なんだ。 — ローランド",
+    "完璧だから好かれる訳じゃない。 — ローランド",
+    "先の見えた人生の方がよっぽど怖い — ローランド",
+    "皆んなそれぞれ、ストライクゾーンは違っていい。 — ローランド",
+    "幸せは独り占めするよりもシェアした方が長く続く。 — ローランド",
+    "一日サボれば1週間サボる。一週間サボれば1ヶ月サボる。一ヶ月サボるやつは1年サボるよ。 — ローランド"
+  ],
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
@@ -323,9 +383,10 @@
       "明心見性"
     ]
   },
-  "effortLevel": "high",
   "alwaysThinkingEnabled": true,
+  "effortLevel": "high",
   "feedbackSurveyState": {
     "lastShownTime": 1754037628446
-  }
+  },
+  "skipAutoPermissionPrompt": true
 }
