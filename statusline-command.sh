@@ -1,126 +1,135 @@
 #!/bin/bash
-# Claude Code Status Line Script
+# Claude Code Status Line Script v2.0
 # Format:
 #   📂 ~/git/github.com/org/repo
-#   🐙 repo-name │ 🌿 main +2 ~3
-#   🧠 ████████░░░░░░░ 53% │ 💪 claude-sonnet-4-6
-#   🔢 ↑1234 ↓567 📦3456 cached
-#   ⏱️  セッション: 12m/5h (4%) │ リセット: 14:30
-#   📅 週リミット: 2h30m/25h (10%) │ リセット: 2026-03-14 00:00
+#   🐙 repo-name(クリッカブル) │ 🌿 main +2 ~3
+#   🧠 ████████░░░░░░░ 53%  (claude-sonnet-4-6)
+#   🔢 ↑1234 ↓567 📦3456 cached │ 💰 $0.05 │ ✏️  +10 -3
+#   🟢 5h: █████│░░░░ 50.0% ✓ │ ♻️ 14:30
+#   🟢 7d: ███│░░░░░░ 30.0% ✓ │ ♻️ 3/14 00:00
+#   🤖 agent-name │ 🌲 worktree-name (branch)
+#   ⚠️  200Kトークン超過！（条件付き表示）
 #
-# NOTE: セッション時間・週リミットはstatusLine JSONに含まれないため、
-#       ~/.claude/session-tracking/ 配下のファイルで状態を管理します。
-#       セッション制限時間・週制限時間はClaude Proの仕様値を定数として使用しています。
-#       実際のリセット時刻はAnthropicのサーバー側で管理されており、
-#       ここでの表示は「セッション開始からの経過時間」を基にした推定値です。
-
-# =========================================================
-# 定数設定（Claude Proの制限値 - 変更する場合はここを編集）
-# =========================================================
-SESSION_LIMIT_HOURS=5          # セッションあたりの上限時間（時間）
-WEEKLY_LIMIT_HOURS=25          # 週あたりの上限時間（時間）
-TRACKING_DIR="$HOME/.claude/session-tracking"
-SESSION_DB="$TRACKING_DIR/sessions.json"
-WEEK_STATE_FILE="$TRACKING_DIR/week-state.json"
-
-# =========================================================
-# セッション追跡の初期化
-# =========================================================
-mkdir -p "$TRACKING_DIR"
+# Features:
+#   - OAuth Usage API からレート制限を取得（5h/7d）+ ペーシングターゲット（│マーカー）
+#   - ペーシング判定: ターゲット以下=✓、超過=⚡
+#   - OSC 8 エスケープシーケンスでリポジトリ名をクリッカブルリンク化
+#   - 200Kトークン超過時に点滅警告
+#   - エージェント名 + ワークツリー情報の表示
+#   - APIレスポンスは /tmp/claude/statusline-usage-cache.json にキャッシュ（60秒間）
 
 input=$(cat)
-session_id=$(echo "$input" | jq -r '.session_id // ""')
-now_epoch=$(date +%s)
-
-# sessions.json がなければ初期化
-if [ ! -f "$SESSION_DB" ]; then
-    echo '{}' > "$SESSION_DB"
-fi
-
-# week-state.json がなければ初期化
-# 週の開始: 月曜00:00 (JST) を計算
-if [ ! -f "$WEEK_STATE_FILE" ]; then
-    # 今週月曜日のepochを計算（macOS/BSD date対応）
-    day_of_week=$(date +%u)  # 1=月曜, 7=日曜
-    days_since_monday=$(( day_of_week - 1 ))
-    monday_epoch=$(( now_epoch - days_since_monday * 86400 ))
-    # 当日00:00にリセット
-    monday_date=$(date -r "$monday_epoch" "+%Y-%m-%d")
-    monday_midnight=$(date -j -f "%Y-%m-%d %H:%M:%S" "$monday_date 00:00:00" "+%s" 2>/dev/null || echo "$monday_epoch")
-    next_monday_midnight=$(( monday_midnight + 7 * 86400 ))
-    echo "{\"week_start\": $monday_midnight, \"week_end\": $next_monday_midnight, \"total_seconds\": 0}" > "$WEEK_STATE_FILE"
-fi
 
 # =========================================================
-# セッション開始時刻の記録・取得
+# OAuth Token 取得
 # =========================================================
-session_start_epoch=""
-if [ -n "$session_id" ]; then
-    # このsession_idの開始時刻がDBにあるか確認
-    session_start_epoch=$(jq -r --arg sid "$session_id" '.[$sid].start // ""' "$SESSION_DB" 2>/dev/null)
+get_oauth_token() {
+    local token=""
+    # 1. 環境変数
+    if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+        echo "$CLAUDE_CODE_OAUTH_TOKEN"
+        return 0
+    fi
+    # 2. macOS Keychain
+    if command -v security >/dev/null 2>&1; then
+        local blob
+        blob=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
+        if [ -n "$blob" ]; then
+            token=$(echo "$blob" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)
+            if [ -n "$token" ] && [ "$token" != "null" ]; then
+                echo "$token"
+                return 0
+            fi
+        fi
+    fi
+    # 3. Linux credentials file
+    local creds_file="${HOME}/.claude/.credentials.json"
+    if [ -f "$creds_file" ]; then
+        token=$(jq -r '.claudeAiOauth.accessToken // empty' "$creds_file" 2>/dev/null)
+        if [ -n "$token" ] && [ "$token" != "null" ]; then
+            echo "$token"
+            return 0
+        fi
+    fi
+    echo ""
+}
 
-    if [ -z "$session_start_epoch" ] || [ "$session_start_epoch" = "null" ]; then
-        # 新規セッション: 現在時刻を記録
-        session_start_epoch=$now_epoch
-        tmp=$(mktemp)
-        jq --arg sid "$session_id" --argjson start "$now_epoch" \
-            '.[$sid] = {"start": $start, "last_seen": $start}' \
-            "$SESSION_DB" > "$tmp" 2>/dev/null && mv "$tmp" "$SESSION_DB"
-    else
-        # 既存セッション: last_seenを更新
-        tmp=$(mktemp)
-        jq --arg sid "$session_id" --argjson now "$now_epoch" \
-            '.[$sid].last_seen = $now' \
-            "$SESSION_DB" > "$tmp" 2>/dev/null && mv "$tmp" "$SESSION_DB"
+# =========================================================
+# キャッシュ付き Usage API 呼び出し
+# =========================================================
+cache_file="/tmp/claude/statusline-usage-cache.json"
+cache_max_age=60
+mkdir -p /tmp/claude
+
+needs_refresh=true
+usage_data=""
+
+if [ -f "$cache_file" ]; then
+    cache_mtime=$(stat -f %m "$cache_file" 2>/dev/null || stat -c %Y "$cache_file" 2>/dev/null)
+    now=$(date +%s)
+    cache_age=$(( now - cache_mtime ))
+    if [ "$cache_age" -lt "$cache_max_age" ]; then
+        needs_refresh=false
+    fi
+    usage_data=$(cat "$cache_file" 2>/dev/null)
+fi
+
+if $needs_refresh; then
+    touch "$cache_file" 2>/dev/null
+    token=$(get_oauth_token)
+    if [ -n "$token" ] && [ "$token" != "null" ]; then
+        response=$(curl -s --max-time 10 \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $token" \
+            -H "anthropic-beta: oauth-2025-04-20" \
+            -H "User-Agent: claude-code/2.1.34" \
+            "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
+        if [ -n "$response" ] && echo "$response" | jq -e '.five_hour' >/dev/null 2>&1; then
+            usage_data="$response"
+            echo "$response" > "$cache_file"
+        fi
     fi
 fi
 
 # =========================================================
-# 週状態のリセットチェック
+# ヘルパー関数: ISO日時文字列をエポック秒に変換（macOS対応）
 # =========================================================
-week_end=$(jq -r '.week_end // 0' "$WEEK_STATE_FILE" 2>/dev/null || echo 0)
-if [ "$now_epoch" -ge "$week_end" ] 2>/dev/null; then
-    # 新しい週が始まった: リセット
-    day_of_week=$(date +%u)
-    days_since_monday=$(( day_of_week - 1 ))
-    monday_epoch=$(( now_epoch - days_since_monday * 86400 ))
-    monday_date=$(date -r "$monday_epoch" "+%Y-%m-%d")
-    monday_midnight=$(date -j -f "%Y-%m-%d %H:%M:%S" "$monday_date 00:00:00" "+%s" 2>/dev/null || echo "$monday_epoch")
-    next_monday_midnight=$(( monday_midnight + 7 * 86400 ))
-    echo "{\"week_start\": $monday_midnight, \"week_end\": $next_monday_midnight, \"total_seconds\": 0}" > "$WEEK_STATE_FILE"
-    week_end=$next_monday_midnight
-fi
-
-# =========================================================
-# 週の累計時間を計算（全セッションのsessionごとのユニーク秒数を合計）
-# =========================================================
-week_start=$(jq -r '.week_start // 0' "$WEEK_STATE_FILE" 2>/dev/null || echo 0)
-# 今週開始以降のセッション合計秒数を計算
-# セッションごとに (last_seen - start) を合計（ただし週開始より前の部分はカット）
-weekly_total_seconds=$(jq --argjson ws "$week_start" --argjson now "$now_epoch" '
-    [to_entries[] |
-        .value |
-        if .start == null then 0
-        else
-            (if .start < $ws then $ws else .start end) as $eff_start |
-            (if (.last_seen // $now) > $now then $now else (.last_seen // $now) end) as $eff_end |
-            (if $eff_end > $eff_start then $eff_end - $eff_start else 0 end)
-        end
-    ] | add // 0
-' "$SESSION_DB" 2>/dev/null || echo 0)
-
-# =========================================================
-# ヘルパー関数: 秒を "Xh Ym" / "Xm" 形式に変換
-# =========================================================
-format_duration() {
-    local secs=$1
-    local h=$(( secs / 3600 ))
-    local m=$(( (secs % 3600) / 60 ))
-    if [ "$h" -gt 0 ]; then
-        echo "${h}h${m}m"
+iso_to_epoch() {
+    local iso_str="$1"
+    local epoch
+    # GNU date (Linux)
+    epoch=$(date -d "${iso_str}" +%s 2>/dev/null)
+    if [ -n "$epoch" ]; then echo "$epoch"; return 0; fi
+    # BSD date (macOS)
+    local stripped="${iso_str%%.*}"
+    stripped="${stripped%%Z}"
+    stripped="${stripped%%+*}"
+    if [[ "$iso_str" == *"Z"* ]] || [[ "$iso_str" == *"+00:00"* ]]; then
+        epoch=$(env TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "$stripped" +%s 2>/dev/null)
     else
-        echo "${m}m"
+        epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$stripped" +%s 2>/dev/null)
     fi
+    [ -n "$epoch" ] && echo "$epoch"
+}
+
+format_reset_time() {
+    local iso_str="$1"
+    local style="$2"
+    { [ -z "$iso_str" ] || [ "$iso_str" = "null" ]; } && return
+    local epoch
+    epoch=$(iso_to_epoch "$iso_str")
+    [ -z "$epoch" ] && return
+    local formatted=""
+    case "$style" in
+        time)
+            formatted=$(date -d "@$epoch" +"%H:%M" 2>/dev/null || date -j -r "$epoch" +"%H:%M" 2>/dev/null)
+            ;;
+        datetime)
+            formatted=$(date -d "@$epoch" +"%-m/%d %H:%M" 2>/dev/null || date -j -r "$epoch" +"%-m/%d %H:%M" 2>/dev/null)
+            ;;
+    esac
+    [ -n "$formatted" ] && echo "$formatted"
 }
 
 # =========================================================
@@ -164,10 +173,29 @@ if git -C "$cwd" rev-parse --git-dir > /dev/null 2>&1; then
     [ "$unstaged" -gt 0 ] 2>/dev/null && diff_info="$diff_info ~$unstaged"
     [ "$untracked" -gt 0 ] 2>/dev/null && diff_info="$diff_info ?$untracked"
 
+    # OSC 8 クリッカブルリンク: GitHubリポジトリURLを取得
+    remote_url=$(git -C "$cwd" remote get-url origin 2>/dev/null || echo "")
+    github_url=""
+    if [ -n "$remote_url" ]; then
+        # SSH形式 (git@github.com:user/repo.git) → HTTPS形式に変換
+        if [[ "$remote_url" == git@* ]]; then
+            github_url=$(echo "$remote_url" | sed 's|git@\(.*\):\(.*\)\.git|https://\1/\2|' | sed 's|\.git$||')
+        elif [[ "$remote_url" == https://* ]]; then
+            github_url=$(echo "$remote_url" | sed 's|\.git$||')
+        fi
+    fi
+
+    # OSC 8 でリポジトリ名をクリッカブルに
+    if [ -n "$github_url" ] && [ -n "$repo_name" ]; then
+        repo_display="\033]8;;${github_url}\033\\${repo_name}\033]8;;\033\\"
+    else
+        repo_display="$repo_name"
+    fi
+
     if [ -n "$repo_name" ] && [ -n "$branch" ]; then
-        line2="🐙 $repo_name │ 🌿 $branch$diff_info"
+        line2="🐙 $repo_display │ 🌿 $branch$diff_info"
     elif [ -n "$repo_name" ]; then
-        line2="🐙 $repo_name"
+        line2="🐙 $repo_display"
     fi
 fi
 
@@ -209,32 +237,66 @@ elif [ -n "$model_id" ]; then
 fi
 
 # =========================================================
-# Line 4: Token counts + Cost + Code changes
+# Line 4: Token counts + Cost + Code changes + Duration
 # =========================================================
 line4=""
 total_input=$(echo "$input" | jq -r '.context_window.total_input_tokens // empty')
 total_output=$(echo "$input" | jq -r '.context_window.total_output_tokens // empty')
 cache_read=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // empty')
 total_cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
+session_id=$(echo "$input" | jq -r '.session_id // empty')
+transcript_path=$(echo "$input" | jq -r '.transcript_path // empty')
+total_duration_ms=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
+api_duration_ms=$(echo "$input" | jq -r '.cost.total_api_duration_ms // 0')
 lines_added=$(echo "$input" | jq -r '.cost.total_lines_added // empty')
 lines_removed=$(echo "$input" | jq -r '.cost.total_lines_removed // empty')
 
+# 数値にカンマ区切りを追加
+format_number() {
+    printf "%'d" "$1" 2>/dev/null || echo "$1"
+}
+
+# 時間フォーマット（ミリ秒→時:分:秒）
+format_duration_ms() {
+    local ms=$(printf "%.0f" "$1" 2>/dev/null || echo 0)
+    local total_sec=$(( ms / 1000 ))
+    local hours=$(( total_sec / 3600 ))
+    local mins=$(( (total_sec % 3600) / 60 ))
+    local secs=$(( total_sec % 60 ))
+    if [ "$hours" -gt 0 ]; then
+        printf "%dh%02dm" $hours $mins
+    elif [ "$mins" -gt 0 ]; then
+        printf "%dm%02ds" $mins $secs
+    else
+        printf "%ds" $secs
+    fi
+}
+
 token_info=""
-[ -n "$total_input" ] && [ "$total_input" != "null" ] && token_info="${token_info}↑${total_input}"
-[ -n "$total_output" ] && [ "$total_output" != "null" ] && token_info="${token_info} ↓${total_output}"
-[ -n "$cache_read" ] && [ "$cache_read" != "null" ] && [ "$cache_read" != "0" ] && token_info="${token_info} 📦${cache_read} cached"
+[ -n "$total_input" ] && [ "$total_input" != "null" ] && token_info="${token_info}↑$(format_number "$total_input")"
+[ -n "$total_output" ] && [ "$total_output" != "null" ] && token_info="${token_info} ↓$(format_number "$total_output")"
+[ -n "$cache_read" ] && [ "$cache_read" != "null" ] && [ "$cache_read" != "0" ] && token_info="${token_info} 📦$(format_number "$cache_read") cached"
 
 if [ -n "$token_info" ]; then
     line4="🔢 $token_info"
 fi
 
-# セッションコスト
-if [ -n "$total_cost" ] && [ "$total_cost" != "null" ] && [ "$total_cost" != "0" ]; then
-    cost_str="💰 \$${total_cost}"
-    if [ -n "$line4" ]; then
-        line4="$line4 │ $cost_str"
-    else
-        line4="$cost_str"
+# コスト（total_cost_usd はセッション総コストを直接反映）
+if [ -n "$total_cost" ] && [ "$total_cost" != "null" ]; then
+    display_cost=$(echo "$total_cost" | awk '{
+        val = $1 + 0
+        if (val == 0) printf "0"
+        else if (val < 0.01) printf "%.4f", val
+        else if (val < 0.1) printf "%.3f", val
+        else printf "%.2f", val
+    }')
+    if [ "$display_cost" != "0" ]; then
+        cost_str="💰 \$${display_cost}"
+        if [ -n "$line4" ]; then
+            line4="$line4 │ $cost_str"
+        else
+            line4="$cost_str"
+        fi
     fi
 fi
 
@@ -258,43 +320,184 @@ if [ -n "$code_changes" ]; then
     fi
 fi
 
-# =========================================================
-# Line 5: セッション使用時間 (推定値 - JSONに含まれないため外部ファイルで管理)
-# =========================================================
-line5=""
-if [ -n "$session_start_epoch" ] && [ "$session_start_epoch" != "null" ]; then
-    session_elapsed=$(( now_epoch - session_start_epoch ))
-    session_limit_secs=$(( SESSION_LIMIT_HOURS * 3600 ))
-    session_pct=$(( session_elapsed * 100 / session_limit_secs ))
-    [ $session_pct -gt 100 ] && session_pct=100
-
-    elapsed_fmt=$(format_duration "$session_elapsed")
-    limit_fmt="${SESSION_LIMIT_HOURS}h"
-    session_bar=$(make_bar "$session_pct")
-
-    # セッションリセット時刻 = セッション開始 + 5時間
-    reset_epoch=$(( session_start_epoch + session_limit_secs ))
-    reset_time=$(date -r "$reset_epoch" "+%H:%M" 2>/dev/null || date -d "@$reset_epoch" "+%H:%M" 2>/dev/null || echo "?")
-
-    line5="⏱️  $session_bar $elapsed_fmt/${limit_fmt} (${session_pct}%) │ ♻️ $reset_time"
+# 経過時間（total_duration_ms / total_api_duration_ms）
+total_dur_int=$(printf "%.0f" "$total_duration_ms" 2>/dev/null || echo 0)
+if [ "$total_dur_int" -gt 0 ]; then
+    duration_str="⏱️  $(format_duration_ms $total_dur_int)"
+    api_dur_int=$(printf "%.0f" "$api_duration_ms" 2>/dev/null || echo 0)
+    if [ "$api_dur_int" -gt 0 ]; then
+        duration_str="$duration_str(API:$(format_duration_ms $api_dur_int))"
+    fi
+    if [ -n "$line4" ]; then
+        line4="$line4 │ $duration_str"
+    else
+        line4="$duration_str"
+    fi
 fi
 
 # =========================================================
-# Line 6: 週リミット (推定値 - JSONに含まれないため外部ファイルで管理)
+# Line 5 & 6: OAuth Usage API から実際の利用率を表示
 # =========================================================
+
+# 使用率に応じた絵文字
+usage_emoji() {
+    local used=$1
+    if [ "$used" -le 20 ]; then echo "🟢"
+    elif [ "$used" -le 40 ]; then echo "🟡"
+    elif [ "$used" -le 60 ]; then echo "🟠"
+    else echo "🔴"
+    fi
+}
+
+# 使用量バー（█=使用済み、░=残り、│=ペーシングターゲット）
+make_usage_bar() {
+    local pct=$1
+    local target=${2:-}
+    local total=10
+    local filled=$(( pct * total / 100 ))
+    [ $filled -gt $total ] && filled=$total
+
+    local target_pos=-1
+    if [ -n "$target" ] && [ "$target" -ge 0 ] 2>/dev/null && [ "$target" -lt 100 ]; then
+        target_pos=$(( target * total / 100 ))
+        [ "$target_pos" -ge "$total" ] && target_pos=$(( total - 1 ))
+    fi
+
+    local bar_str=""
+    for ((i=0; i<total; i++)); do
+        if [ "$i" -eq "$target_pos" ]; then
+            bar_str="${bar_str}│"
+        elif [ "$i" -lt "$filled" ]; then
+            bar_str="${bar_str}█"
+        else
+            bar_str="${bar_str}░"
+        fi
+    done
+    echo "$bar_str"
+}
+
+# =========================================================
+# ペーシングターゲット計算
+# =========================================================
+calc_pacing_target() {
+    local reset_iso="$1"
+    local window_secs="$2"
+    { [ -z "$reset_iso" ] || [ "$reset_iso" = "null" ]; } && return
+    local reset_epoch
+    reset_epoch=$(iso_to_epoch "$reset_iso")
+    [ -z "$reset_epoch" ] && return
+    local now_epoch
+    now_epoch=$(date +%s)
+    local start_epoch=$(( reset_epoch - window_secs ))
+    local elapsed=$(( now_epoch - start_epoch ))
+    [ "$elapsed" -lt 0 ] && elapsed=0
+    [ "$elapsed" -gt "$window_secs" ] && elapsed=$window_secs
+    echo $(( elapsed * 100 / window_secs ))
+}
+
+line5=""
 line6=""
-weekly_limit_secs=$(( WEEKLY_LIMIT_HOURS * 3600 ))
-weekly_pct=$(( weekly_total_seconds * 100 / weekly_limit_secs ))
-[ $weekly_pct -gt 100 ] && weekly_pct=100
+if [ -n "$usage_data" ] && echo "$usage_data" | jq -e '.five_hour' >/dev/null 2>&1; then
+    # 5時間セッション
+    five_hour_utilization=$(echo "$usage_data" | jq -r '.five_hour.utilization // 0' | awk '{printf "%.1f", $1}')
+    five_hour_int=$(printf "%.0f" "$five_hour_utilization")
+    five_hour_reset_iso=$(echo "$usage_data" | jq -r '.five_hour.resets_at // empty')
+    five_hour_reset=$(format_reset_time "$five_hour_reset_iso" "time")
+    five_hour_emoji=$(usage_emoji "$five_hour_int")
 
-weekly_used_fmt=$(format_duration "$weekly_total_seconds")
-weekly_limit_fmt="${WEEKLY_LIMIT_HOURS}h"
-weekly_bar=$(make_bar "$weekly_pct")
+    # ペーシングターゲット計算（5時間 = 18000秒）
+    five_hour_target=$(calc_pacing_target "$five_hour_reset_iso" 18000)
 
-# 週リセット日時 = 次の月曜00:00
-week_reset_str=$(date -r "$week_end" "+%Y-%m-%d %H:%M" 2>/dev/null || date -d "@$week_end" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "?")
+    five_hour_bar=$(make_usage_bar "$five_hour_int" "$five_hour_target")
+    # ペーシング判定: 使用率がターゲットを超えている場合は⚡、下回っていれば✓
+    pace_indicator_5h=""
+    if [ -n "$five_hour_target" ] && [ "$five_hour_int" -gt 0 ]; then
+        if [ "$five_hour_int" -gt "$five_hour_target" ]; then
+            pace_indicator_5h=" \033[33m⚡\033[0m"
+        else
+            pace_indicator_5h=" \033[32m✓\033[0m"
+        fi
+    fi
+    line5="${five_hour_emoji} 5h: $five_hour_bar ${five_hour_utilization}%${pace_indicator_5h}"
+    [ -n "$five_hour_reset" ] && line5="$line5 │ ♻️ $five_hour_reset"
 
-line6="📅 $weekly_bar $weekly_used_fmt/${weekly_limit_fmt} (${weekly_pct}%) │ ♻️ $week_reset_str"
+    # 7日間
+    seven_day_utilization=$(echo "$usage_data" | jq -r '.seven_day.utilization // 0' | awk '{printf "%.1f", $1}')
+    seven_day_int=$(printf "%.0f" "$seven_day_utilization")
+    seven_day_reset_iso=$(echo "$usage_data" | jq -r '.seven_day.resets_at // empty')
+    seven_day_reset=$(format_reset_time "$seven_day_reset_iso" "datetime")
+    seven_day_emoji=$(usage_emoji "$seven_day_int")
+
+    # ペーシングターゲット計算（7日 = 604800秒）
+    seven_day_target=$(calc_pacing_target "$seven_day_reset_iso" 604800)
+
+    seven_day_bar=$(make_usage_bar "$seven_day_int" "$seven_day_target")
+    pace_indicator_7d=""
+    if [ -n "$seven_day_target" ] && [ "$seven_day_int" -gt 0 ]; then
+        if [ "$seven_day_int" -gt "$seven_day_target" ]; then
+            pace_indicator_7d=" \033[33m⚡\033[0m"
+        else
+            pace_indicator_7d=" \033[32m✓\033[0m"
+        fi
+    fi
+    line6="${seven_day_emoji} 7d: $seven_day_bar ${seven_day_utilization}%${pace_indicator_7d}"
+    [ -n "$seven_day_reset" ] && line6="$line6 │ ♻️ $seven_day_reset"
+else
+    line5="⏱️  5h: -- (データ取得中...)"
+    line6="📅 7d: -- (データ取得中...)"
+fi
+
+# =========================================================
+# Line 7: エージェント名 + ワークツリー情報
+# =========================================================
+line7=""
+agent_name=$(echo "$input" | jq -r '.agent.name // empty')
+worktree_name=$(echo "$input" | jq -r '.worktree.name // empty')
+worktree_branch=$(echo "$input" | jq -r '.worktree.branch // empty')
+
+line7_parts=""
+if [ -n "$agent_name" ] && [ "$agent_name" != "null" ]; then
+    line7_parts="🤖 \033[95m${agent_name}\033[0m"
+fi
+if [ -n "$worktree_name" ] && [ "$worktree_name" != "null" ]; then
+    wt_info="🌲 \033[36m${worktree_name}\033[0m"
+    if [ -n "$worktree_branch" ] && [ "$worktree_branch" != "null" ]; then
+        wt_info="$wt_info (\033[36m${worktree_branch}\033[0m)"
+    fi
+    if [ -n "$line7_parts" ]; then
+        line7_parts="$line7_parts │ $wt_info"
+    else
+        line7_parts="$wt_info"
+    fi
+fi
+[ -n "$line7_parts" ] && line7="$line7_parts"
+
+# =========================================================
+# 200Kトークン超過警告
+# =========================================================
+exceeds_200k=$(echo "$input" | jq -r '.exceeds_200k_tokens // false')
+warning_line=""
+if [ "$exceeds_200k" = "true" ]; then
+    warning_line="\033[5m\033[91m⚠️  200Kトークン超過！コンテキスト品質が低下しています。新セッションを推奨します。\033[0m"
+fi
+
+# =========================================================
+# Line 8: Session ID + Transcript Path
+# =========================================================
+line8=""
+if [ -n "$session_id" ] && [ "$session_id" != "null" ]; then
+    short_session="${session_id:0:8}"
+    line8="🆔 \033[2m${short_session}...\033[0m"
+fi
+if [ -n "$transcript_path" ] && [ "$transcript_path" != "null" ]; then
+    transcript_name=$(basename "$transcript_path")
+    transcript_link="\033]8;;file://${transcript_path}\033\\📄 ${transcript_name}\033]8;;\033\\"
+    if [ -n "$line8" ]; then
+        line8="$line8 │ $transcript_link"
+    else
+        line8="$transcript_link"
+    fi
+fi
 
 # =========================================================
 # Output
@@ -305,5 +508,8 @@ output="$line1"
 [ -n "$line4" ] && output="$output\n$line4"
 [ -n "$line5" ] && output="$output\n$line5"
 [ -n "$line6" ] && output="$output\n$line6"
+[ -n "$line7" ] && output="$output\n$line7"
+[ -n "$line8" ] && output="$output\n$line8"
+[ -n "$warning_line" ] && output="$output\n$warning_line"
 
 printf '%b\n' "$output"
