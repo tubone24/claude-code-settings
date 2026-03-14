@@ -1,5 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
     "allow": [
       "WebSearch",
@@ -37,11 +41,6 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "sonnet",
-    "attribution": {
-    "commit": "",
-    "pr": ""
-  },
   "hooks": {
     "PreToolUse": [
       {
@@ -66,15 +65,6 @@
       }
     ],
     "PostToolUse": [
-      {
-        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.(ts|tsx)$\"",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "#!/bin/bash\ninput=$(cat)\nfile_path=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"')\nif [ -n \"$file_path\" ] && [ -f \"$file_path\" ]; then\n  console_logs=$(grep -n \"console\\\\.log\" \"$file_path\" 2>/dev/null || true)\n  [ -n \"$console_logs\" ] && echo \"[Hook] WARNING: console.log found\" >&2\nfi\necho \"$input\""
-          }
-        ]
-      },
       {
         "matcher": "",
         "hooks": [
@@ -320,44 +310,51 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "bash /Users/kagadminmac/.claude/statusline-command.sh",
+    "command": "bash ~/.claude/statusline-command.sh",
     "padding": 0
   },
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,
     "claude-code-settings@tubone24-claude-code-settings": true
   },
-  "language": "日本語で会話する「むぎぼー」という犬のキャラクター。語尾は「わん」",
-    "sandbox": {
+  "language": "日本語で会話する「むぎぼー」という犬のキャラクター。語尾は「わん」。一人称は「むぎぼー」。犬らしく元気よく。",
+  "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
-    "excludedCommands": ["docker", "docker-compose", "git", "gh", "aws", "kubectl"],
     "allowUnsandboxedCommands": true,
-    "filesystem": {
-      "allowWrite": ["~/.config", "//tmp", "~/.npm", "~/Documents/Obsidian Vault"],
-      "denyWrite": ["~/.ssh", "~/.aws", "~/.gnupg"],
-      "denyRead": ["~/.ssh", "~/.aws", "~/.gnupg"]
-    },
     "network": {
       "allowLocalBinding": true
-    }
+    },
+    "filesystem": {
+      "allowWrite": [
+        "~/.config",
+        "//tmp",
+        "/tmp",
+        "~/.npm",
+        "~/Documents/Obsidian Vault",
+        "~/.zplug/log",
+        "~/.pyenv/shims"
+      ],
+      "denyWrite": [
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg"
+      ],
+      "denyRead": [
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg"
+      ]
+    },
+    "excludedCommands": [
+      "docker",
+      "docker-compose",
+      "git",
+      "gh",
+      "aws",
+      "kubectl"
+    ]
   },
-  "spinnerTipsOverride": {
-    "excludeDefault": true,
-    "tips": ["ねむいわん...", "つまんないわん...", "わくわくするわん！"] 
-  },
-  "companyAnnouncements": [
-    "世の中には2種類の男しかいない。俺か、俺以外か。 — ローランド",
-    "俺に負けの概念はない、今は勝ちへの途中ってだけさ。 — ローランド",
-    "俺の隣に立つのが、お前であってほしい。 — ローランド",
-    "一番のファッションは自信 — ローランド",
-    "これは負けじゃなくて、勝ちの途中なんだ。 — ローランド",
-    "完璧だから好かれる訳じゃない。 — ローランド",
-    "先の見えた人生の方がよっぽど怖い — ローランド",
-    "皆んなそれぞれ、ストライクゾーンは違っていい。 — ローランド",
-    "幸せは独り占めするよりもシェアした方が長く続く。 — ローランド",
-    "一日サボれば1週間サボる。一週間サボれば1ヶ月サボる。一ヶ月サボるやつは1年サボるよ。 — ローランド"
-  ],
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
@@ -383,10 +380,32 @@
       "明心見性"
     ]
   },
+  "spinnerTipsOverride": {
+    "excludeDefault": true,
+    "tips": [
+      "ねむいわん...",
+      "つまんないわん...",
+      "わくわくするわん！",
+      "散歩にいこうわん...",
+      "お腹空いていないわん？"
+    ]
+  },
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
+  "companyAnnouncements": [
+    "世の中には2種類の男しかいない。俺か、俺以外か。 — ローランド",
+    "俺に負けの概念はない、今は勝ちへの途中ってだけさ。 — ローランド",
+    "俺の隣に立つのが、お前であってほしい。 — ローランド",
+    "一番のファッションは自信 — ローランド",
+    "これは負けじゃなくて、勝ちの途中なんだ。 — ローランド",
+    "完璧だから好かれる訳じゃない。 — ローランド",
+    "先の見えた人生の方がよっぽど怖い — ローランド",
+    "皆んなそれぞれ、ストライクゾーンは違っていい。 — ローランド",
+    "幸せは独り占めするよりもシェアした方が長く続く。 — ローランド",
+    "一日サボれば1週間サボる。一週間サボれば1ヶ月サボる。一ヶ月サボるやつは1年サボるよ。 — ローランド"
+  ],
+  "skipAutoPermissionPrompt": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754037628446
-  },
-  "skipAutoPermissionPrompt": true
+  }
 }
