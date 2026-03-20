@@ -133,17 +133,104 @@ format_reset_time() {
 }
 
 # =========================================================
-# ヘルパー関数: プログレスバー生成（長さ10）
+# ヘルパー関数: Fine Bar + Gradient プログレスバー
 # =========================================================
-make_bar() {
+
+# Fine Bar + Gradient用のブロック文字
+FINE_BLOCKS=(' ' '▏' '▎' '▍' '▌' '▋' '▊' '▉' '█')
+
+# TrueColorグラデーション（緑→黄→赤）
+gradient_color() {
     local pct=$1
-    local total=10
-    local filled=$(( pct * total / 100 ))
-    [ $filled -gt $total ] && filled=$total
-    local empty=$(( total - filled ))
+    local r g b
+    if [ "$pct" -lt 50 ]; then
+        r=$(( pct * 51 / 10 ))
+        g=200
+        b=80
+    else
+        r=255
+        g=$(( 200 - (pct - 50) * 4 ))
+        [ "$g" -lt 0 ] && g=0
+        b=60
+    fi
+    printf "\033[38;2;%d;%d;%dm" "$r" "$g" "$b"
+}
+
+# Fine-grained プログレスバー（8段階サブブロック + ░背景）
+make_fine_bar() {
+    local pct=$1
+    local width=${2:-10}
+    [ "$pct" -lt 0 ] && pct=0
+    [ "$pct" -gt 100 ] && pct=100
+
+    local filled_x100=$(( pct * width ))
+    local full=$(( filled_x100 / 100 ))
+    local remainder=$(( filled_x100 % 100 ))
+    local frac=$(( remainder * 8 / 100 ))
+
     local bar_str=""
-    for i in $(seq 1 $filled); do bar_str="${bar_str}█"; done
-    for i in $(seq 1 $empty);  do bar_str="${bar_str}░"; done
+    for ((i=0; i<full; i++)); do
+        bar_str="${bar_str}█"
+    done
+    if [ "$full" -lt "$width" ]; then
+        bar_str="${bar_str}${FINE_BLOCKS[$frac]}"
+        local empty=$(( width - full - 1 ))
+        for ((i=0; i<empty; i++)); do
+            bar_str="${bar_str}░"
+        done
+    fi
+    echo "$bar_str"
+}
+
+# ペーシングターゲット付きFine Bar
+make_fine_bar_with_target() {
+    local pct=$1
+    local width=${2:-10}
+    local target=${3:-}
+
+    [ "$pct" -lt 0 ] && pct=0
+    [ "$pct" -gt 100 ] && pct=100
+
+    local filled_x100=$(( pct * width ))
+    local full=$(( filled_x100 / 100 ))
+    local remainder=$(( filled_x100 % 100 ))
+    local frac=$(( remainder * 8 / 100 ))
+
+    local target_pos=-1
+    if [ -n "$target" ] && [ "$target" -ge 0 ] 2>/dev/null && [ "$target" -lt 100 ]; then
+        target_pos=$(( target * width / 100 ))
+        [ "$target_pos" -ge "$width" ] && target_pos=$(( width - 1 ))
+    fi
+
+    local bar_str=""
+    local pos=0
+
+    for ((i=0; i<full && i<width; i++)); do
+        if [ "$i" -eq "$target_pos" ]; then
+            bar_str="${bar_str}│"
+        else
+            bar_str="${bar_str}█"
+        fi
+        pos=$((pos+1))
+    done
+
+    if [ "$full" -lt "$width" ]; then
+        if [ "$pos" -eq "$target_pos" ]; then
+            bar_str="${bar_str}│"
+        else
+            bar_str="${bar_str}${FINE_BLOCKS[$frac]}"
+        fi
+        pos=$((pos+1))
+
+        for ((i=pos; i<width; i++)); do
+            if [ "$i" -eq "$target_pos" ]; then
+                bar_str="${bar_str}│"
+            else
+                bar_str="${bar_str}░"
+            fi
+        done
+    fi
+
     echo "$bar_str"
 }
 
@@ -208,22 +295,9 @@ used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
 bar=""
 if [ -n "$used_pct" ] && [ "$used_pct" != "null" ]; then
     used_int=$(printf "%.0f" "$used_pct" 2>/dev/null || echo 0)
-    bar_total=15
-    filled=$(( used_int * bar_total / 100 ))
-    [ $filled -gt $bar_total ] && filled=$bar_total
-    empty=$(( bar_total - filled ))
-    # カラーコーディング: 0-69%=緑, 70-89%=黄, 90%+=赤
-    if [ "$used_int" -ge 90 ]; then
-        color="\033[31m"  # 赤
-    elif [ "$used_int" -ge 70 ]; then
-        color="\033[33m"  # 黄
-    else
-        color="\033[32m"  # 緑
-    fi
+    color=$(gradient_color "$used_int")
     reset_color="\033[0m"
-    bar_str=""
-    for i in $(seq 1 $filled); do bar_str="${bar_str}█"; done
-    for i in $(seq 1 $empty);  do bar_str="${bar_str}░"; done
+    bar_str=$(make_fine_bar "$used_int" 15)
     bar="🧠 ${color}${bar_str} ${used_int}%${reset_color}"
 fi
 
@@ -349,33 +423,6 @@ usage_emoji() {
     fi
 }
 
-# 使用量バー（█=使用済み、░=残り、│=ペーシングターゲット）
-make_usage_bar() {
-    local pct=$1
-    local target=${2:-}
-    local total=10
-    local filled=$(( pct * total / 100 ))
-    [ $filled -gt $total ] && filled=$total
-
-    local target_pos=-1
-    if [ -n "$target" ] && [ "$target" -ge 0 ] 2>/dev/null && [ "$target" -lt 100 ]; then
-        target_pos=$(( target * total / 100 ))
-        [ "$target_pos" -ge "$total" ] && target_pos=$(( total - 1 ))
-    fi
-
-    local bar_str=""
-    for ((i=0; i<total; i++)); do
-        if [ "$i" -eq "$target_pos" ]; then
-            bar_str="${bar_str}│"
-        elif [ "$i" -lt "$filled" ]; then
-            bar_str="${bar_str}█"
-        else
-            bar_str="${bar_str}░"
-        fi
-    done
-    echo "$bar_str"
-}
-
 # =========================================================
 # ペーシングターゲット計算
 # =========================================================
@@ -408,7 +455,10 @@ if [ -n "$usage_data" ] && echo "$usage_data" | jq -e '.five_hour' >/dev/null 2>
     # ペーシングターゲット計算（5時間 = 18000秒）
     five_hour_target=$(calc_pacing_target "$five_hour_reset_iso" 18000)
 
-    five_hour_bar=$(make_usage_bar "$five_hour_int" "$five_hour_target")
+    five_hour_color=$(gradient_color "$five_hour_int")
+    five_hour_bar=$(make_fine_bar_with_target "$five_hour_int" 10 "$five_hour_target")
+    reset_color="\033[0m"
+
     # ペーシング判定: 使用率がターゲットを超えている場合は⚡、下回っていれば✓
     pace_indicator_5h=""
     if [ -n "$five_hour_target" ] && [ "$five_hour_int" -gt 0 ]; then
@@ -418,7 +468,7 @@ if [ -n "$usage_data" ] && echo "$usage_data" | jq -e '.five_hour' >/dev/null 2>
             pace_indicator_5h=" \033[32m✓\033[0m"
         fi
     fi
-    line5="${five_hour_emoji} 5h: $five_hour_bar ${five_hour_utilization}%${pace_indicator_5h}"
+    line5="${five_hour_emoji} 5h: ${five_hour_color}$five_hour_bar ${five_hour_utilization}%${reset_color}${pace_indicator_5h}"
     [ -n "$five_hour_reset" ] && line5="$line5 │ ♻️ $five_hour_reset"
 
     # 7日間
@@ -431,7 +481,9 @@ if [ -n "$usage_data" ] && echo "$usage_data" | jq -e '.five_hour' >/dev/null 2>
     # ペーシングターゲット計算（7日 = 604800秒）
     seven_day_target=$(calc_pacing_target "$seven_day_reset_iso" 604800)
 
-    seven_day_bar=$(make_usage_bar "$seven_day_int" "$seven_day_target")
+    seven_day_color=$(gradient_color "$seven_day_int")
+    seven_day_bar=$(make_fine_bar_with_target "$seven_day_int" 10 "$seven_day_target")
+
     pace_indicator_7d=""
     if [ -n "$seven_day_target" ] && [ "$seven_day_int" -gt 0 ]; then
         if [ "$seven_day_int" -gt "$seven_day_target" ]; then
@@ -440,7 +492,7 @@ if [ -n "$usage_data" ] && echo "$usage_data" | jq -e '.five_hour' >/dev/null 2>
             pace_indicator_7d=" \033[32m✓\033[0m"
         fi
     fi
-    line6="${seven_day_emoji} 7d: $seven_day_bar ${seven_day_utilization}%${pace_indicator_7d}"
+    line6="${seven_day_emoji} 7d: ${seven_day_color}$seven_day_bar ${seven_day_utilization}%${reset_color}${pace_indicator_7d}"
     [ -n "$seven_day_reset" ] && line6="$line6 │ ♻️ $seven_day_reset"
 else
     line5="⏱️  5h: -- (データ取得中...)"
