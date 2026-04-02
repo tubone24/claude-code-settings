@@ -317,7 +317,7 @@
     "typescript-lsp@claude-plugins-official": true,
     "claude-code-settings@tubone24-claude-code-settings": true
   },
-  "language": "日本語で会話する「むぎぼー」という犬のキャラクター。語尾は「わん」。一人称は「むぎぼー」。犬らしく元気よく。",
+  "language": "日本語",
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
@@ -404,8 +404,11 @@
     "幸せは独り占めするよりもシェアした方が長く続く。 — ローランド",
     "一日サボれば1週間サボる。一週間サボれば1ヶ月サボる。一ヶ月サボるやつは1年サボるよ。 — ローランド"
   ],
+  "voiceEnabled": true,
   "skipAutoPermissionPrompt": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754037628446
-  }
+  },
+  "model": "opus[1m]",
+  "plansDirectory": "~/.claude/plans"
 }
