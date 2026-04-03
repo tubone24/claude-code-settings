@@ -11,28 +11,7 @@
       "Read",
       "Glob",
       "Grep",
-      "LSP",
-      "Bash(ls:*)",
-      "Bash(cat:*)",
-      "Bash(head:*)",
-      "Bash(tail:*)",
-      "Bash(find:*)",
-      "Bash(which:*)",
-      "Bash(pwd:*)",
-      "Bash(tree:*)",
-      "Bash(wc:*)",
-      "Bash(file:*)",
-      "Bash(stat:*)",
-      "Bash(echo:*)",
-      "Bash(jq:*)",
-      "Bash(*| jq*)",
-      "Bash(*| grep*)",
-      "Bash(*| head*)",
-      "Bash(*| tail*)",
-      "Bash(diff *)",
-      "Bash(cp ~/.claude/*)",
-      "Bash(jq *)",
-      "Bash(mv /tmp/*)"
+      "LSP"
     ],
     "deny": [
       "Read(./.env)",
@@ -323,7 +302,8 @@
     "autoAllowBashIfSandboxed": true,
     "allowUnsandboxedCommands": true,
     "network": {
-      "allowLocalBinding": true
+      "allowLocalBinding": true,
+      "allowedDomains": ["*"]
     },
     "filesystem": {
       "allowWrite": [
@@ -410,5 +390,5 @@
     "lastShownTime": 1754037628446
   },
   "model": "opus[1m]",
-  "plansDirectory": "~/.claude/plans"
+  "plansDirectory": "/Users/xxx/.claude/plans"
 }
